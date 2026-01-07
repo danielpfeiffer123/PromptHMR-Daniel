@@ -20,6 +20,67 @@ from pipeline.postprocessing import post_optimization
 from pipeline.mcs_export_cam import export_scene_with_camera
 from smplcodec import SMPLCodec
 
+def get_text_input():
+        """Interactive prompt to read time-range and text pairs from terminal.
+
+        Expected input format (repeat until empty range entered):
+        0-0.5
+        put its hand higher.
+        0.433-0.85
+        make sure the person still
+
+        Returns:
+            texts (list): list of [start: float, end: float, text: str]
+        """
+        texts = []
+        print('Enter range and text pairs. Leave the range empty to finish.')
+        while True:
+            try:
+                rng = input('range (start-end): ').strip()
+            except EOFError:
+                break
+
+            if rng == '':
+                break
+
+            # parse range
+            if '-' not in rng:
+                print('Invalid range format, expected start-end (e.g. 0-0.5). Try again.')
+                continue
+
+            parts = rng.split('-', 1)
+            try:
+                start = float(parts[0].strip())
+                end = float(parts[1].strip())
+            except Exception:
+                print('Could not parse numbers from range. Try again.')
+                continue
+
+            try:
+                idx = input('person id:').strip()
+            except EOFError:
+                break
+
+            if idx == '':
+                break
+
+            if int(idx)<=0:
+                print('Variable idx must be a positive interger. Try again.')
+
+            try:
+                text = input('text: ').strip()
+            except EOFError:
+                text = ''
+
+            text_dict = {'start_frame': start,
+                         'end_frame': end,
+                         'idx': int(idx),
+                         'text': text}
+            texts.append(text_dict)
+
+        if texts==[]:
+            texts = None
+        return texts
 
 class Pipeline:
     def __init__(self, static_cam=False):
@@ -110,12 +171,15 @@ class Pipeline:
         else:
             mask_prompt = False
 
+        texts = get_text_input()
         phmr = PromptHMR_Video()
-        self.results = phmr.run(self.images, self.results, mask_prompt)
+        self.results = phmr.run(self.images, self.results, mask_prompt, texts)
         self.results['contact_joint_ids'] = [7, 10, 8, 11, 20, 21]
         self.results['has_hps_cam'] = True
     
         return
+    
+    
 
 
     def camera_motion_estimation(self, static_cam = False):
@@ -278,7 +342,9 @@ class Pipeline:
 
 
     def __call__(self, input_video, output_folder, static_cam=False, 
-                 save_only_essential=False, max_frame=None):
+                 save_only_essential=False, max_frame=None, text_flag=False):
+        
+        self.text_flag = text_flag
 
         def cvt_to_numpy(d):
             for k, v in d.items():

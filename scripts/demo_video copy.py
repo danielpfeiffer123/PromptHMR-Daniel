@@ -25,12 +25,10 @@ def main(input_video='data/examples/boxing_short.mp4',
     output_folder = 'results/' + os.path.basename(input_video).split('.')[0]
     if os.path.exists(os.path.join(output_folder, "results.pkl")):
         return 
-    
     pipeline = Pipeline(static_cam=static_camera)
     results = pipeline.__call__(input_video, 
                                 output_folder, 
-                                save_only_essential=True,
-                                text_flag=True)
+                                save_only_essential=True)
     # Viser
     if run_viser:
         # Downsample for viser visualization
@@ -40,11 +38,10 @@ def main(input_video='data/examples/boxing_short.mp4',
 
         # Get vertices
         all_verts = []
-        # We'll collect per-timestep arrays and then stack into ndarrays
-        global_orient = []  # will become (T, 3, 3)
-        body_pose = []      # will become (T, 21, 3, 3)
-        betas = []          # will become (T, n_betas)
-        transl = []         # will become (T, 3)
+        global_orient = []
+        body_pose = []
+        betas = []
+        transl = []
         for k in world4d:
 
             world3d = world4d[k]
@@ -54,16 +51,13 @@ def main(input_video='data/examples/boxing_short.mp4',
 
             # print(world3d)
 
-            # 只保留第一个人的动作 — convert each entry to a numpy array
-            # rotmat[0,0] -> first joint (global_orient) as (3,3)
-            # rotmat[0,1:22] -> body pose (21,3,3)
-            global_orient.append(rotmat[0,0].numpy())
+            #只保留第一个人的动作
+            global_orient.append(rotmat[0,:1].numpy())
             body_pose.append(rotmat[0,1:22].numpy())
-
-            if len(betas) == 0:  # only need to save betas/transl once
-                betas.append(world3d['shape'][0].numpy())
-
+            betas.append(world3d['shape'][0].numpy())
             transl.append(world3d['trans'][0].numpy())
+
+
 
             verts = smplx(global_orient = rotmat[:,:1].cuda(),
                         body_pose = rotmat[:,1:22].cuda(),
@@ -73,23 +67,13 @@ def main(input_video='data/examples/boxing_short.mp4',
             world3d['vertices'] = verts
             all_verts.append(torch.tensor(verts, dtype=torch.bfloat16))
 
-        # Stack lists into ndarrays with timestep as first dim
-        if len(global_orient) == 0:
-            print(f'No person frames found in {output_folder}, skipping save.')
-        else:
-            global_orient = np.stack(global_orient, axis=0)
-            body_pose = np.stack(body_pose, axis=0)
-            betas_array = betas[0]
-            transl = np.stack(transl, axis=0)
-
-            numpy_dict = {
-                'root_orient': global_orient,
-                'pose_body': body_pose,
-                'betas':betas_array,
-                'trans': transl,
-                'num_betas': betas_array.shape[0]}
-
-            np.savez(f'{output_folder}/smplx_traj.npz', **numpy_dict)
+        numpy_dict = {
+            'global_orient': global_orient,
+            'body_pose': body_pose,
+            'betas': betas,
+            'transl': transl}
+        
+        np.savez(f'{output_folder}/temp_{0}.npz', **numpy_dict)
 
         all_verts = torch.cat(all_verts)
         [gv, gf, gc] = get_floor_mesh(all_verts, scale=2)

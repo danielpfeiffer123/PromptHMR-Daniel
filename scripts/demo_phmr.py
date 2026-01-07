@@ -31,11 +31,13 @@ def main(image='data/examples/example_1.jpg', gravity_align=False, detect_conf=0
     yolo = YOLO("data/pretrain/yolov8x.pt")
     phmr = load_model_from_folder('data/pretrain/phmr')
 
+    input_text = input("Please enter text prompt for the person of interest (or press Enter to skip): ")
+
     # Prompt HMR
     img = cv2.imread(image)[:,:,::-1]
     detection = yolo(image, verbose=False, conf=detect_conf, classes=0)
     boxes = detection[0].boxes.data.cpu()
-    inputs = [{'image_cv': img, 'boxes': boxes, 'text': None, 'masks': None}]
+    inputs = [{'image_cv': img, 'boxes': boxes, 'text': input_text, 'masks': None}]
 
     # Inference
     with torch.no_grad() and autocast('cuda'):

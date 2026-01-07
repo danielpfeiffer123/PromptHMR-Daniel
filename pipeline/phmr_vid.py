@@ -17,10 +17,13 @@ from pipeline.gvhmr.hmr4d.utils.geo_transform import compute_cam_angvel
 from pipeline.gvhmr.hmr4d.utils.geo.hmr_cam import get_bbx_xys_from_xyxy, normalize_kp2d
 from prompt_hmr.utils.rotation_conversions import axis_angle_to_matrix
 
+import pdb
+
 
 def load_video_head():
     phmr_vid_cfg =  OmegaConf.load('data/pretrain/phmr_vid/prhmr_release_002.yaml')
-    phmr_vid_ckpt = 'data/pretrain/phmr_vid/prhmr_release_002.ckpt'
+    # phmr_vid_ckpt = 'data/pretrain/phmr_vid/prhmr_release_002.ckpt'
+    phmr_vid_ckpt = 'data/pretrain/phmr_vid/phmr_b1b2.ckpt'
     vid_head = DemoPL(
         pipeline=phmr_vid_cfg.model.pipeline,
         smplx_path='data/body_models/smplx/SMPLX_NEUTRAL.npz',
@@ -36,8 +39,10 @@ class PromptHMR_Video():
         self.model = load_phmr('data/pretrain/phmr/checkpoint.ckpt')
         self.vid_head = load_video_head()
     
+
+
     @torch.no_grad()
-    def run(self, images, results, mask_prompt=True):
+    def run(self, images, results, mask_prompt=True, texts=None):
         tracks = results['people']
         camera = results['camera']
         
@@ -50,7 +55,11 @@ class PromptHMR_Video():
         cam_intrinsic[0, 2] = img_center[0].item() if isinstance(img_center, np.ndarray) else img_center[0]
         cam_intrinsic[1, 2] = img_center[1].item() if isinstance(img_center, np.ndarray) else img_center[1]
         
-        dataset = PromptHMRVideoDataset(images, tracks, cam_intrinsic)
+        if texts is None:
+            dataset = PromptHMRVideoDataset(images, tracks, cam_intrinsic)
+        else:
+            dataset = PromptHMRVideoDataset(images, tracks, cam_intrinsic, texts)
+
         dataloader = DataLoader(dataset, batch_size=16, shuffle=False, num_workers=0, collate_fn=lambda x: x)
 
         for k, v in tracks.items():
@@ -62,6 +71,8 @@ class PromptHMR_Video():
         # Image model
         for batch in dataloader:
             with autocast('cuda'):
+                print(len(batch))
+                print(batch[0]['text'])
                 output = self.model(batch, mask_prompt=mask_prompt)
             
             for bid in range(len(batch)):
@@ -164,9 +175,10 @@ def pad_image(item, IMG_SIZE=896):
     
     
 class PromptHMRVideoDataset(Dataset):
-    def __init__(self, images, tracks, cam_int):
+    def __init__(self, images, tracks, cam_int, texts=None):
         self.images = images
         self.tracks = tracks
+        self.texts = texts
         
         frames = set([x for t in tracks.values() for x in t['frames'].tolist()])
         self.frames = sorted(list(frames))
@@ -184,18 +196,35 @@ class PromptHMRVideoDataset(Dataset):
     def __getitem__(self, idx):
         idx = self.frames[idx]
         image_cv = self.images[idx]
+        percent = idx / len(self.images)
         
         boxes = []
         kpts = []
         masks = []
         track_ids = []
+
         for person_id, track in self.tracks.items():
+            # print(track.keys())
+
             if idx in track['frames']:
                 bbox = track['bboxes'][track['frames']==idx]
                 bbox = np.concatenate([bbox, np.ones_like(bbox)[...,:1]], axis=-1)
                 
                 kpt = track['keypoints_2d'][track['frames']==idx][:, :25]
                 obj_masks = track['masks'][track['frames']==idx]
+
+                text_in_one_frame = ''
+
+                for line in self.texts:
+                    if (line['idx'] == person_id) and (line['start_frame'] <= percent <= line['end_frame']):
+                        pdb.set_trace()
+                        text_in_one_frame += line['text'] + '\n'
+
+                    print("text_in_one_frame:", text_in_one_frame)
+
+                    
+
+
                 
                 mm = []
                 for mask in obj_masks:
@@ -217,6 +246,8 @@ class PromptHMRVideoDataset(Dataset):
         masks = torch.from_numpy(np.concatenate(masks)).float()[:, None]
         
         cam_int_batch = self.cam_int.float()[None].repeat(len(boxes), 1, 1)
+
+
         item = {
             'boxes': boxes,
             'cam_int': cam_int_batch,
@@ -224,7 +255,9 @@ class PromptHMRVideoDataset(Dataset):
             'track_ids': track_ids,
             'kpts': kpts,
             'masks': masks,
+            'text': text_in_one_frame,
         }
+
         item = pad_image(item, IMG_SIZE=896)
         item['image'] = self.normalization(item['image_cv'])
         item['image_cv'] = torch.tensor(item['image_cv'])
