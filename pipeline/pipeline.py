@@ -172,6 +172,8 @@ class Pipeline:
             mask_prompt = False
 
         texts = get_text_input()
+        # texts = [{'start_frame': 0, 'end_frame': 0.55222, 'idx': 1, 'text': 'make him move less significantly.'},
+        #          {'start_frame': 0.05, 'end_frame': 0.9, 'idx': 1, 'text': 'raise his arm.'}]
         phmr = PromptHMR_Video()
         self.results = phmr.run(self.images, self.results, mask_prompt, texts)
         self.results['contact_joint_ids'] = [7, 10, 8, 11, 20, 21]

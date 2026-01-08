@@ -217,7 +217,7 @@ class PromptHMRVideoDataset(Dataset):
 
                 for line in self.texts:
                     if (line['idx'] == person_id) and (line['start_frame'] <= percent <= line['end_frame']):
-                        pdb.set_trace()
+                        # pdb.set_trace()
                         text_in_one_frame += line['text'] + '\n'
 
                     print("text_in_one_frame:", text_in_one_frame)

@@ -75,6 +75,10 @@ class PHMR(pl.LightningModule):
             
             img_pe = self.prompt_encoder.get_dense_pe()
             img_embed = image_embeddings[[i]]
+            
+            if text=='':
+                text = None
+
             prompt_embed, dense_embed = self.prompt_encoder(boxes, text, kpts, masks)
 
             predictions = self.smpl_decoder(cam_int, img_embed, img_pe, prompt_embed, dense_embed, interact)
