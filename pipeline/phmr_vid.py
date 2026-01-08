@@ -71,8 +71,8 @@ class PromptHMR_Video():
         # Image model
         for batch in dataloader:
             with autocast('cuda'):
-                print(len(batch))
-                print(batch[0]['text'])
+                # print(len(batch))
+                # print(batch[0]['text'])
                 output = self.model(batch, mask_prompt=mask_prompt)
             
             for bid in range(len(batch)):
