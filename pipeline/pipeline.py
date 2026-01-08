@@ -33,10 +33,10 @@ def get_text_input():
             texts (list): list of [start: float, end: float, text: str]
         """
         texts = []
-        print('Enter range and text pairs. Leave the range empty to finish.')
+        print('--------->Enter range and text pairs. Leave the range empty to finish.')
         while True:
             try:
-                rng = input('range (start-end): ').strip()
+                rng = input('>>>>>>>>>generating new prompt \n range (start-end): ').strip()
             except EOFError:
                 break
 
@@ -57,7 +57,7 @@ def get_text_input():
                 continue
 
             try:
-                idx = input('person id:').strip()
+                idx = input('person id: ').strip()
             except EOFError:
                 break
 
@@ -66,6 +66,7 @@ def get_text_input():
 
             if int(idx)<=0:
                 print('Variable idx must be a positive interger. Try again.')
+                continue
 
             try:
                 text = input('text: ').strip()

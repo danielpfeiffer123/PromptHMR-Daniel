@@ -204,7 +204,7 @@ class PromptHMRVideoDataset(Dataset):
         track_ids = []
 
         for person_id, track in self.tracks.items():
-            # print(track.keys())
+            # print(person_id)
 
             if idx in track['frames']:
                 bbox = track['bboxes'][track['frames']==idx]
@@ -215,12 +215,14 @@ class PromptHMRVideoDataset(Dataset):
 
                 text_in_one_frame = ''
 
-                for line in self.texts:
-                    if (line['idx'] == person_id) and (line['start_frame'] <= percent <= line['end_frame']):
-                        # pdb.set_trace()
-                        text_in_one_frame += line['text'] + '\n'
 
-                    print("text_in_one_frame:", text_in_one_frame)
+                if self.texts is not None:
+                    for line in self.texts:
+                        if (line['idx'] == person_id) and (line['start_frame'] <= percent <= line['end_frame']):
+                            # pdb.set_trace()
+                            text_in_one_frame += line['text'] + '\n'
+
+                        # print("text_in_one_frame:", text_in_one_frame)
 
                     
 
