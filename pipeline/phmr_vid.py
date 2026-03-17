@@ -202,6 +202,7 @@ class PromptHMRVideoDataset(Dataset):
         kpts = []
         masks = []
         track_ids = []
+        texts_in_frame = []
 
         for person_id, track in self.tracks.items():
             # print(person_id)
@@ -209,20 +210,22 @@ class PromptHMRVideoDataset(Dataset):
             if idx in track['frames']:
                 bbox = track['bboxes'][track['frames']==idx]
                 bbox = np.concatenate([bbox, np.ones_like(bbox)[...,:1]], axis=-1)
-                
+
                 kpt = track['keypoints_2d'][track['frames']==idx][:, :25]
                 obj_masks = track['masks'][track['frames']==idx]
 
-                text_in_one_frame = ''
+                text_in_one_frame = ""
 
 
                 if self.texts is not None:
                     for line in self.texts:
-                        if (line['idx'] == person_id) and (line['start_frame'] <= percent <= line['end_frame']):
+                        if (line['idx'] == person_id):
                             # pdb.set_trace()
                             text_in_one_frame += line['text'] + '\n'
+                            # text_in_one_frame.append(line['text'])
 
-                        # print("text_in_one_frame:", text_in_one_frame)
+                    # print("text_in_one_frame:", text_in_one_frame)
+                    texts_in_frame.append(text_in_one_frame.strip() if text_in_one_frame.strip() else 'NULL')
 
                     
 
@@ -257,7 +260,7 @@ class PromptHMRVideoDataset(Dataset):
             'track_ids': track_ids,
             'kpts': kpts,
             'masks': masks,
-            'text': text_in_one_frame,
+            'text': texts_in_frame if self.texts is not None else None,
         }
 
         item = pad_image(item, IMG_SIZE=896)

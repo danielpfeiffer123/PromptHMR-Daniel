@@ -35,13 +35,7 @@ def get_text_input():
         texts = []
         print('--------->Enter range and text pairs. Leave the range empty to finish.')
         while True:
-            try:
-                rng = input('>>>>>>>>>generating new prompt \n range (start-end): ').strip()
-            except EOFError:
-                break
-
-            if rng == '':
-                break
+            rng = "0-1"
 
             # parse range
             if '-' not in rng:
@@ -144,7 +138,8 @@ class Pipeline:
                 det_thresh=self.cfg.det_thresh,
                 score_thresh=self.cfg.det_score_thresh,
                 height_thresh=self.cfg.det_height_thresh,
-                bbox_interp=self.cfg.bbox_interp
+                bbox_interp=self.cfg.bbox_interp,
+                save_vis=self.cfg.visualize_tracks,
             )
             
         self.results['masks'] = masks
@@ -173,6 +168,7 @@ class Pipeline:
             mask_prompt = False
 
         texts = get_text_input()
+        print(f"Received text prompts: {texts}")
         # texts = [{'start_frame': 0, 'end_frame': 0.55222, 'idx': 1, 'text': 'make him move less significantly.'},
         #          {'start_frame': 0.05, 'end_frame': 0.9, 'idx': 1, 'text': 'raise his arm.'}]
         phmr = PromptHMR_Video()

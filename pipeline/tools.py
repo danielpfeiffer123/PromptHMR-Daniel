@@ -103,10 +103,10 @@ def detect_track(images, savedir=None, visualization=False,
     return tracks
 
 
-def detect_segment_track_sam(images, out_path, paths_dict, debug_masks, sam2_type, 
-                             detector_type='detectron2', filter_ng_points=False, kp_thres=0.1, 
-                             num_max_people=10, height_thresh=0.3, score_thresh=0.4, det_thresh=0.5, 
-                             bbox_interp=False):
+def detect_segment_track_sam(images, out_path, paths_dict, debug_masks, sam2_type,
+                             detector_type='detectron2', filter_ng_points=False, kp_thres=0.1,
+                             num_max_people=10, height_thresh=0.3, score_thresh=0.4, det_thresh=0.5,
+                             bbox_interp=False, save_vis=False):
     from torch.utils.data import DataLoader
     from torchvision.models.segmentation import DeepLabV3_ResNet50_Weights
     from detectron2.config import get_cfg
@@ -393,7 +393,88 @@ def detect_segment_track_sam(images, out_path, paths_dict, debug_masks, sam2_typ
     del predictor
     del segm_model
 
+    if save_vis:
+        visualize_track_results(track_results, images, out_path)
+
     return track_results, masks
+
+
+def visualize_track_results(track_results, images, out_path, fps=30):
+    """Render a video with colored masks and ID labels for each tracked person.
+
+    Saves:
+      {out_path}/seg_vis.mp4          — full video
+      {out_path}/seg_vis_preview.jpg  — first annotated frame
+    """
+    mask_colors = [
+        (0, 0, 255), (0, 255, 0), (255, 0, 0), (255, 255, 0), (255, 0, 255),
+        (0, 255, 255), (0, 0, 128), (0, 128, 0), (128, 0, 0), (128, 128, 0),
+    ]
+
+    # Build per-frame lookup: frame_t -> [(obj_id, local_mask_idx), ...]
+    frame_to_tracks = defaultdict(list)
+    for obj_id, track in track_results.items():
+        for local_idx, t in enumerate(track['frames']):
+            frame_to_tracks[int(t)].append((obj_id, local_idx))
+
+    # Determine frame size
+    if isinstance(images[0], str):
+        first_img = cv2.imread(images[0])
+    else:
+        first_img = images[0][..., ::-1].copy()
+    h, w = first_img.shape[:2]
+
+    video_path = os.path.join(out_path, 'seg_vis.mp4')
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out_vid = cv2.VideoWriter(video_path, fourcc, fps, (w, h))
+
+    preview_saved = False
+    for t in range(len(images)):
+        if isinstance(images[t], str):
+            frame = cv2.imread(images[t])
+        else:
+            frame = images[t][..., ::-1].copy()
+
+        if t not in frame_to_tracks:
+            out_vid.write(frame)
+            continue
+
+        overlay = frame.copy()
+        for obj_id, local_idx in frame_to_tracks[t]:
+            track = track_results[obj_id]
+            c = mask_colors[(obj_id - 1) % len(mask_colors)]
+            mask = track['masks'][local_idx]
+            bbox = track['bboxes'][local_idx].astype(int)
+
+            # Blend colored mask
+            color_layer = np.zeros_like(frame)
+            color_layer[mask] = c
+            overlay = cv2.addWeighted(overlay, 0.65, color_layer, 0.35, 0)
+
+            # Bounding box
+            x1, y1, x2, y2 = bbox
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), c, 2)
+
+            # Person ID label with background
+            label = f"ID:{obj_id}"
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = max(0.6, min(1.5, (x2 - x1) / 120))
+            thickness = 2
+            (tw, th), _ = cv2.getTextSize(label, font, font_scale, thickness)
+            cx = (x1 + x2) // 2
+            cy = max(y1 - 8, th + 4)
+            cv2.rectangle(overlay, (cx - tw // 2 - 4, cy - th - 4),
+                          (cx + tw // 2 + 4, cy + 4), c, -1)
+            cv2.putText(overlay, label, (cx - tw // 2, cy),
+                        font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+
+        out_vid.write(overlay)
+        if not preview_saved:
+            cv2.imwrite(os.path.join(out_path, 'seg_vis_preview.jpg'), overlay)
+            preview_saved = True
+
+    out_vid.release()
+    print(f"Saved segmentation visualization → {video_path}")
 
 
 def recursive_to_dict(obj):

@@ -76,7 +76,7 @@ class PHMR(pl.LightningModule):
             img_pe = self.prompt_encoder.get_dense_pe()
             img_embed = image_embeddings[[i]]
             
-            if text=='':
+            if not text:
                 text = None
 
             prompt_embed, dense_embed = self.prompt_encoder(boxes, text, kpts, masks)

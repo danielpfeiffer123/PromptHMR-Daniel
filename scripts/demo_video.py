@@ -15,10 +15,10 @@ from prompt_hmr.vis.traj import get_floor_mesh
 from pipeline import Pipeline
 
 
-def main(input_video='data/examples/boxing_short.mp4', 
+def main(input_video='data/examples/boxing_short.mp4',
          static_camera=False,
          run_viser=True,
-         viser_total=1500, 
+         viser_total=1500,
          viser_subsample=1):
     smplx = SMPLX_Layer(SMPLX_PATH).cuda()
 
@@ -69,6 +69,23 @@ def main(input_video='data/examples/boxing_short.mp4',
                                 output_folder, 
                                 save_only_essential=True,
                                 text_flag=True)
+    # Ask which person IDs to save (IDs match the labels shown in seg_vis preview)
+    all_pids = sorted(results['people'].keys())
+    print(f"\nDetected person IDs: {all_pids}  (refer to seg_vis_preview.jpg for visual reference)")
+    while True:
+        raw = input("Enter person IDs to save (space-separated, e.g. '1 2'): ").strip()
+        try:
+            person_ids = tuple(int(x) for x in raw.split())
+            if not person_ids:
+                raise ValueError
+            invalid = [p for p in person_ids if p not in all_pids]
+            if invalid:
+                print(f"  IDs {invalid} were not detected. Please choose from {all_pids}.")
+                continue
+            break
+        except ValueError:
+            print("  Invalid input, please enter space-separated integers.")
+
     # Viser
     if run_viser:
         # Downsample for viser visualization
@@ -76,58 +93,58 @@ def main(input_video='data/examples/boxing_short.mp4',
         world4d = pipeline.create_world4d(step=viser_subsample, total=viser_total)
         world4d = {i:world4d[k] for i,k in enumerate(world4d)}
 
+        # Per-person accumulators keyed by the visualization ID (1-based)
+        # world4d stores track_id as (obj_id - 1), so we look up (pid - 1) each frame.
+        person_data = {
+            pid: {'global_orient': [], 'body_pose': [], 'betas': None, 'transl': []}
+            for pid in person_ids
+        }
+
         # Get vertices
         all_verts = []
-        # We'll collect per-timestep arrays and then stack into ndarrays
-        global_orient = []  # will become (T, 3, 3)
-        body_pose = []      # will become (T, 21, 3, 3)
-        betas = []          # will become (T, n_betas)
-        transl = []         # will become (T, 3)
         for k in world4d:
-
             world3d = world4d[k]
-            if len(world3d['track_id']) == 0: # no people
+            if len(world3d['track_id']) == 0:  # no people this frame
                 continue
             rotmat = axis_angle_to_matrix(world3d['pose'].reshape(-1, 55, 3))
 
-            # print(world3d)
+            # Collect data for each requested person
+            for pid in person_ids:
+                target_tid = pid - 1  # world4d stores (obj_id - 1)
+                matches = (world3d['track_id'] == target_tid).nonzero(as_tuple=False)
+                if len(matches) == 0:
+                    continue
+                idx = matches[0, 0].item()
+                person_data[pid]['global_orient'].append(rotmat[idx, 0].numpy())
+                person_data[pid]['body_pose'].append(rotmat[idx, 1:22].numpy())
+                person_data[pid]['transl'].append(world3d['trans'][idx].numpy())
+                if person_data[pid]['betas'] is None:
+                    person_data[pid]['betas'] = world3d['shape'][idx].numpy()
 
-            # 只保留第一个人的动作 — convert each entry to a numpy array
-            # rotmat[0,0] -> first joint (global_orient) as (3,3)
-            # rotmat[0,1:22] -> body pose (21,3,3)
-            global_orient.append(rotmat[0,0].numpy())
-            body_pose.append(rotmat[0,1:22].numpy())
+            verts = smplx(global_orient=rotmat[:, :1].cuda(),
+                          body_pose=rotmat[:, 1:22].cuda(),
+                          betas=world3d['shape'].cuda(),
+                          transl=world3d['trans'].cuda()).vertices.cpu().numpy()
 
-            if len(betas) == 0:  # only need to save betas/transl once
-                betas.append(world3d['shape'][0].numpy())
-
-            transl.append(world3d['trans'][0].numpy())
-
-            verts = smplx(global_orient = rotmat[:,:1].cuda(),
-                        body_pose = rotmat[:,1:22].cuda(),
-                        betas = world3d['shape'].cuda(),
-                        transl = world3d['trans'].cuda()).vertices.cpu().numpy()
-            
             world3d['vertices'] = verts
             all_verts.append(torch.tensor(verts, dtype=torch.bfloat16))
 
-        # Stack lists into ndarrays with timestep as first dim
-        if len(global_orient) == 0:
-            print(f'No person frames found in {output_folder}, skipping save.')
-        else:
-            global_orient = np.stack(global_orient, axis=0)
-            body_pose = np.stack(body_pose, axis=0)
-            betas_array = betas[0]
-            transl = np.stack(transl, axis=0)
-
-            numpy_dict = {
-                'root_orient': global_orient,
-                'pose_body': body_pose,
-                'betas':betas_array,
-                'trans': transl,
-                'num_betas': betas_array.shape[0]}
-
-            np.savez(f'{output_folder}/smplx_traj.npz', **numpy_dict)
+        # Save one npz per requested person
+        for pid in person_ids:
+            pd = person_data[pid]
+            if len(pd['global_orient']) == 0:
+                print(f'Person ID {pid} not found in any frame, skipping save.')
+                continue
+            go = np.stack(pd['global_orient'], axis=0)
+            bp = np.stack(pd['body_pose'], axis=0)
+            tr = np.stack(pd['transl'], axis=0)
+            ba = pd['betas']
+            print(f"Person {pid} — global_orient: {go.shape}, body_pose: {bp.shape}, trans: {tr.shape}")
+            npz_path = f'{output_folder}/smplx_traj_id{pid}.npz'
+            np.savez(npz_path,
+                     root_orient=go, pose_body=bp, betas=ba, trans=tr,
+                     num_betas=ba.shape[0])
+            print(f'Saved → {npz_path}')
 
         all_verts = torch.cat(all_verts)
         [gv, gf, gc] = get_floor_mesh(all_verts, scale=2)

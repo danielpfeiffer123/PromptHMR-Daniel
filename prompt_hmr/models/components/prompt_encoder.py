@@ -107,6 +107,7 @@ class PromptEncoder(nn.Module):
     def _embed_text(self, text: list[str]) -> torch.Tensor:
         """Embeds text prompts."""
         bn = len(text)
+        # print(f"Encoding text prompts: {text}")
         text_features = self.clip_encoder.encode_text(text)
         text_features = text_features.reshape(bn, -1, self.embed_dim)
         null_features = self.not_embeddings.weight
